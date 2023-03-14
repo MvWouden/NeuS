@@ -35,13 +35,13 @@ def load_K_Rt_from_P(filename, P=None):
 
 
 class Dataset:
-    def __init__(self, conf):
+    def __init__(self, conf, data_dir):
         super(Dataset, self).__init__()
         print('Load data: Begin')
         self.device = torch.device('cuda')
         self.conf = conf
 
-        self.data_dir = conf.get_string('data_dir')
+        self.data_dir = data_dir or conf.get_string('data_dir')
         self.render_cameras_name = conf.get_string('render_cameras_name')
         self.object_cameras_name = conf.get_string('object_cameras_name')
 
@@ -50,10 +50,14 @@ class Dataset:
 
         camera_dict = np.load(os.path.join(self.data_dir, self.render_cameras_name))
         self.camera_dict = camera_dict
-        self.images_lis = sorted(glob(os.path.join(self.data_dir, 'image/*.png')))
+        self.images_lis_png = sorted(glob(os.path.join(self.data_dir, 'image', '*.png')))
+        self.images_lis_jpg = sorted(glob(os.path.join(self.data_dir, 'image', '*.jpg')))
+        self.images_lis = self.images_lis_png + self.images_lis_jpg
         self.n_images = len(self.images_lis)
         self.images_np = np.stack([cv.imread(im_name) for im_name in self.images_lis]) / 256.0
-        self.masks_lis = sorted(glob(os.path.join(self.data_dir, 'mask/*.png')))
+        self.masks_lis_png = sorted(glob(os.path.join(self.data_dir, 'mask/*.png')))
+        self.masks_lis_jpg = sorted(glob(os.path.join(self.data_dir, 'mask/*.jpg')))
+        self.masks_lis = self.masks_lis_png + self.masks_lis_jpg
         self.masks_np = np.stack([cv.imread(im_name) for im_name in self.masks_lis]) / 256.0
 
         # world_mat is a projection matrix from world to image

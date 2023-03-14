@@ -18,7 +18,7 @@ from models.renderer import NeuSRenderer
 
 
 class Runner:
-    def __init__(self, conf_path, mode='train', case='CASE_NAME', is_continue=False):
+    def __init__(self, conf_path, data_dir, mode='train', case='CASE_NAME', is_continue=False):
         self.device = torch.device('cuda')
 
         # Configuration
@@ -29,10 +29,10 @@ class Runner:
         f.close()
 
         self.conf = ConfigFactory.parse_string(conf_text)
-        self.conf['dataset.data_dir'] = self.conf['dataset.data_dir'].replace('CASE_NAME', case)
-        self.base_exp_dir = self.conf['general.base_exp_dir']
+        self.conf['dataset.data_dir'] = data_dir or self.conf['dataset.data_dir'].replace('CASE_NAME', case)
+        self.base_exp_dir = os.path.join(data_dir, 'exp') if data_dir else self.conf['general.base_exp_dir']
         os.makedirs(self.base_exp_dir, exist_ok=True)
-        self.dataset = Dataset(self.conf['dataset'])
+        self.dataset = Dataset(self.conf['dataset'], data_dir)
         self.iter_step = 0
 
         # Training parameters
@@ -155,9 +155,9 @@ class Runner:
             self.writer.add_scalar('Statistics/weight_max', (weight_max * mask).sum() / mask_sum, self.iter_step)
             self.writer.add_scalar('Statistics/psnr', psnr, self.iter_step)
 
-            if self.iter_step % self.report_freq == 0:
-                print(self.base_exp_dir)
-                print('iter:{:8>d} loss = {} lr={}'.format(self.iter_step, loss, self.optimizer.param_groups[0]['lr']))
+            # if self.iter_step % self.report_freq == 0:
+            #     print(self.base_exp_dir)
+            #     print('iter:{:8>d} loss = {} lr={}'.format(self.iter_step, loss, self.optimizer.param_groups[0]['lr']))
 
             if self.iter_step % self.save_freq == 0:
                 self.save_checkpoint()
@@ -194,17 +194,7 @@ class Runner:
             g['lr'] = self.learning_rate * learning_factor
 
     def file_backup(self):
-        dir_lis = self.conf['general.recording']
-        os.makedirs(os.path.join(self.base_exp_dir, 'recording'), exist_ok=True)
-        for dir_name in dir_lis:
-            cur_dir = os.path.join(self.base_exp_dir, 'recording', dir_name)
-            os.makedirs(cur_dir, exist_ok=True)
-            files = os.listdir(dir_name)
-            for f_name in files:
-                if f_name[-3:] == '.py':
-                    copyfile(os.path.join(dir_name, f_name), os.path.join(cur_dir, f_name))
-
-        copyfile(self.conf_path, os.path.join(self.base_exp_dir, 'recording', 'config.conf'))
+        pass
 
     def load_checkpoint(self, checkpoint_name):
         checkpoint = torch.load(os.path.join(self.base_exp_dir, 'checkpoints', checkpoint_name), map_location=self.device)
@@ -325,7 +315,7 @@ class Runner:
         img_fine = (np.concatenate(out_rgb_fine, axis=0).reshape([H, W, 3]) * 256).clip(0, 255).astype(np.uint8)
         return img_fine
 
-    def validate_mesh(self, world_space=False, resolution=64, threshold=0.0):
+    def validate_mesh(self, world_space=False, resolution=512, threshold=0.0):
         bound_min = torch.tensor(self.dataset.object_bbox_min, dtype=torch.float32)
         bound_max = torch.tensor(self.dataset.object_bbox_max, dtype=torch.float32)
 
@@ -368,8 +358,6 @@ class Runner:
 
 
 if __name__ == '__main__':
-    print('Hello Wooden')
-
     torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
     FORMAT = "[%(filename)s:%(lineno)s - %(funcName)20s() ] %(message)s"
@@ -382,16 +370,17 @@ if __name__ == '__main__':
     parser.add_argument('--is_continue', default=False, action="store_true")
     parser.add_argument('--gpu', type=int, default=0)
     parser.add_argument('--case', type=str, default='')
+    parser.add_argument('--data_dir', type=str, default='')
 
     args = parser.parse_args()
 
     torch.cuda.set_device(args.gpu)
-    runner = Runner(args.conf, args.mode, args.case, args.is_continue)
+    runner = Runner(args.conf, args.data_dir, args.mode, args.case, args.is_continue)
 
     if args.mode == 'train':
         runner.train()
     elif args.mode == 'validate_mesh':
-        runner.validate_mesh(world_space=True, resolution=512, threshold=args.mcube_threshold)
+        runner.validate_mesh(world_space=True, resolution=2048, threshold=args.mcube_threshold)
     elif args.mode.startswith('interpolate'):  # Interpolate views given two image indices
         _, img_idx_0, img_idx_1 = args.mode.split('_')
         img_idx_0 = int(img_idx_0)
